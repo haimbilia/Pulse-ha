@@ -1,0 +1,16 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Pulse",
+        "description": "Enter your Pulse server details.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "token": "Token",
+          "target_id": "Target ID"
+        }
+      }
+    }
+  }
+}
