@@ -1,5 +1,8 @@
 {
   "config": {
+    "error": {
+      "cannot_connect": "Failed to connect to the Pulse device."
+    },
     "step": {
       "user": {
         "title": "Connect to Pulse",
@@ -7,6 +10,14 @@
         "data": {
           "host": "Host",
           "port": "Port",
+          "token": "Token",
+          "target_id": "Target ID"
+        }
+      },
+      "zeroconf_confirm": {
+        "title": "Discovered Pulse",
+        "description": "Set up {name} at {host}:{port}. You can leave token and target ID empty if you are not using them.",
+        "data": {
           "token": "Token",
           "target_id": "Target ID"
         }
