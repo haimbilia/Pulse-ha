@@ -6,20 +6,20 @@
     "step": {
       "user": {
         "title": "Connect to Pulse",
-        "description": "Enter your Pulse server details.",
+        "description": "Enter the Pulse device host or IP address and the web server port.",
         "data": {
           "host": "Host",
           "port": "Port",
-          "token": "Token",
-          "target_id": "Target ID"
+          "token": "Token (optional)",
+          "target_id": "Target ID (optional)"
         }
       },
       "zeroconf_confirm": {
         "title": "Discovered Pulse",
-        "description": "Set up {name} at {host}:{port}. You can leave token and target ID empty if you are not using them.",
+        "description": "Set up {name} at {host}:{port}. You can leave the optional fields empty unless you need them later.",
         "data": {
-          "token": "Token",
-          "target_id": "Target ID"
+          "token": "Token (optional)",
+          "target_id": "Target ID (optional)"
         }
       }
     }

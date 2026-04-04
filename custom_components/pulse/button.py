@@ -20,6 +20,7 @@ async def async_setup_entry(
 class PulseWakeButton(ButtonEntity):
     _attr_has_entity_name = True
     _attr_name = "Wake PC"
+    _attr_icon = "mdi:power-cycle"
 
     def __init__(self, entry: ConfigEntry, client) -> None:
         self._client = client
