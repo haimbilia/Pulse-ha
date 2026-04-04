@@ -1,12 +1,12 @@
 # Pulse Home Assistant Integration
 
-Pulse is a local Home Assistant integration for the Pulse ESP32 controller. It lets Home Assistant talk directly to the Pulse web API over your local network so you can:
+Pulse is a local Home Assistant integration for the Pulse controller. It lets Home Assistant talk directly to the Pulse web API over your local network so you can:
 
 - trigger a wake / power pulse from Home Assistant
 - monitor whether the PC is currently online
 - keep everything local without cloud dependencies
 
-This integration is designed for the Pulse firmware and Windows app in the main Pulse project. The Windows app is used for configuration, while Home Assistant is used for automation and quick control.
+This integration is designed for the Pulse firmware and Windows app in the main Pulse project. The Windows app is used for configuration, it is not needed in order for this integration to function.
 
 ## Features
 
