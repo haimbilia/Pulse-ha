@@ -40,38 +40,41 @@ class PulseConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def _async_scan_devices(self) -> list[dict]:
         """Scan the local network for Pulse devices via mDNS."""
-        from zeroconf import ServiceStateChange
-        from zeroconf.asyncio import AsyncServiceBrowser, AsyncServiceInfo
-
-        aiozc = await zeroconf.async_get_async_instance(self.hass)
-        services: list[tuple[str, str]] = []
-
-        def _on_change(zc, service_type: str, name: str, state_change: ServiceStateChange) -> None:
-            if state_change is ServiceStateChange.Added:
-                services.append((service_type, name))
-
-        browser = AsyncServiceBrowser(aiozc.zeroconf, [_MDNS_SERVICE_TYPE], handlers=[_on_change])
         try:
-            await asyncio.sleep(2)
-        finally:
-            await browser.async_cancel()
+            from zeroconf import ServiceStateChange
+            from zeroconf.asyncio import AsyncServiceBrowser, AsyncServiceInfo
 
-        results = []
-        for service_type, name in services:
-            info = AsyncServiceInfo(service_type, name)
-            if await info.async_request(aiozc.zeroconf, 3000):
-                addresses = info.parsed_addresses()
-                ipv4 = [a for a in addresses if ":" not in a]
-                host = ipv4[0] if ipv4 else (addresses[0] if addresses else None)
-                if host:
-                    display_name = name.replace(f".{service_type}", "").rstrip(".")
-                    results.append({
-                        "name": display_name,
-                        "host": host,
-                        "port": info.port or DEFAULT_PORT,
-                    })
+            aiozc = await zeroconf.async_get_async_instance(self.hass)
+            services: list[tuple[str, str]] = []
 
-        return results
+            def _on_change(zc, service_type: str, name: str, state_change: ServiceStateChange) -> None:
+                if state_change is ServiceStateChange.Added:
+                    services.append((service_type, name))
+
+            browser = AsyncServiceBrowser(aiozc.zeroconf, [_MDNS_SERVICE_TYPE], handlers=[_on_change])
+            try:
+                await asyncio.sleep(2)
+            finally:
+                await browser.async_cancel()
+
+            results = []
+            for service_type, name in services:
+                info = AsyncServiceInfo(service_type, name)
+                if await info.async_request(aiozc.zeroconf, 3000):
+                    addresses = info.parsed_addresses()
+                    ipv4 = [a for a in addresses if ":" not in a]
+                    host = ipv4[0] if ipv4 else (addresses[0] if addresses else None)
+                    if host:
+                        display_name = name.replace(f".{service_type}", "").rstrip(".")
+                        results.append({
+                            "name": display_name,
+                            "host": host,
+                            "port": info.port or DEFAULT_PORT,
+                        })
+
+            return results
+        except Exception:  # noqa: BLE001
+            return []
 
     async def async_step_user(self, user_input: dict | None = None) -> FlowResult:
         if user_input is None:
