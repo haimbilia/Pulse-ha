@@ -8,7 +8,6 @@ from homeassistant.components import zeroconf
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.helpers.selector import SelectSelector, SelectSelectorConfig, SelectOptionDict
 
 from .api import PulseApiClient, PulseApiError
 from .const import CONF_HOST, CONF_PORT, CONF_TOKEN, DEFAULT_PORT, DOMAIN
@@ -178,18 +177,13 @@ class PulseConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     def _scan_schema(self) -> vol.Schema:
-        options = [
-            SelectOptionDict(
-                value=f"{d['host']}:{d['port']}",
-                label=f"{d['name']} ({d['host']})",
-            )
+        options = {
+            f"{d['host']}:{d['port']}": f"{d['name']} ({d['host']})"
             for d in self._scan_results
-        ]
-        options.append(SelectOptionDict(value="manual", label="Enter manually"))
+        }
+        options["manual"] = "Enter manually"
         return vol.Schema({
-            vol.Required("device"): SelectSelector(
-                SelectSelectorConfig(options=options)
-            )
+            vol.Required("device"): vol.In(options)
         })
 
     def _user_schema(self, user_input: dict | None = None) -> vol.Schema:
