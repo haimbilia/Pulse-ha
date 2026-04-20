@@ -5,6 +5,13 @@
     },
     "step": {
       "user": {
+        "title": "Pulse Devices Found",
+        "description": "Select a Pulse device to set up, or choose to enter the address manually.",
+        "data": {
+          "device": "Device"
+        }
+      },
+      "manual": {
         "title": "Connect to Pulse",
         "description": "Enter the Pulse device host or IP address and the web server port.",
         "data": {
