@@ -11,7 +11,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import SelectSelector, SelectSelectorConfig, SelectOptionDict
 
 from .api import PulseApiClient, PulseApiError
-from .const import CONF_HOST, CONF_PORT, CONF_TARGET_ID, CONF_TOKEN, DEFAULT_PORT, DOMAIN
+from .const import CONF_HOST, CONF_PORT, CONF_TOKEN, DEFAULT_PORT, DOMAIN
 
 _MDNS_SERVICE_TYPE = "_pulse._tcp.local."
 
@@ -142,11 +142,6 @@ class PulseConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_HOST: self._discovered_host,
                 CONF_PORT: self._discovered_port,
             }
-            if user_input.get(CONF_TOKEN):
-                data[CONF_TOKEN] = user_input[CONF_TOKEN]
-            if user_input.get(CONF_TARGET_ID):
-                data[CONF_TARGET_ID] = user_input[CONF_TARGET_ID]
-
             errors: dict[str, str] = {}
             try:
                 info = await self._async_validate_input(data)
@@ -159,7 +154,7 @@ class PulseConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             return self.async_show_form(
                 step_id="zeroconf_confirm",
-                data_schema=self._zeroconf_schema(user_input),
+                data_schema=vol.Schema({}),
                 errors=errors,
                 description_placeholders={
                     "name": self._discovered_name or self._discovered_host,
@@ -170,7 +165,7 @@ class PulseConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="zeroconf_confirm",
-            data_schema=self._zeroconf_schema(),
+            data_schema=vol.Schema({}),
             errors={},
             description_placeholders={
                 "name": self._discovered_name or self._discovered_host,
@@ -201,15 +196,5 @@ class PulseConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required(CONF_HOST, default=user_input.get(CONF_HOST, "")): str,
                 vol.Required(CONF_PORT, default=user_input.get(CONF_PORT, DEFAULT_PORT)): int,
                 vol.Optional(CONF_TOKEN, default=user_input.get(CONF_TOKEN, "")): str,
-                vol.Optional(CONF_TARGET_ID, default=user_input.get(CONF_TARGET_ID, "")): str,
-            }
-        )
-
-    def _zeroconf_schema(self, user_input: dict | None = None) -> vol.Schema:
-        user_input = user_input or {}
-        return vol.Schema(
-            {
-                vol.Optional(CONF_TOKEN, default=user_input.get(CONF_TOKEN, "")): str,
-                vol.Optional(CONF_TARGET_ID, default=user_input.get(CONF_TARGET_ID, "")): str,
             }
         )

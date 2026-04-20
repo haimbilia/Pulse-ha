@@ -17,17 +17,12 @@
         "data": {
           "host": "Host",
           "port": "Port",
-          "token": "Token (optional)",
-          "target_id": "Target ID (optional)"
+          "token": "Token (optional)"
         }
       },
       "zeroconf_confirm": {
         "title": "Discovered Pulse",
-        "description": "Set up {name} at {host}:{port}. You can leave the optional fields empty unless you need them later.",
-        "data": {
-          "token": "Token (optional)",
-          "target_id": "Target ID (optional)"
-        }
+        "description": "Set up {name} at {host}:{port}."
       }
     }
   }
