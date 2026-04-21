@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+import aiohttp
 from aiohttp import ClientError, ClientSession
 
 
@@ -76,3 +77,31 @@ class PulseApiClient:
     async def async_is_pc_online(self, target_id: str | None = None) -> bool:
         status = await self.async_get_status()
         return bool(status.get("pcOnline", False))
+
+    async def async_get_events(self, after: int = 0) -> list[tuple[int, str]]:
+        """Fetch protocol events newer than `after` as (id, line) tuples."""
+        try:
+            async with self._session.get(
+                f"{self._base_url}/events",
+                params={"after": str(after)},
+                headers=self._headers(),
+                timeout=aiohttp.ClientTimeout(total=3.0),
+            ) as response:
+                if response.status != 200:
+                    raise PulseApiError(f"Events endpoint returned {response.status}")
+                text = await response.text()
+        except (ClientError, asyncio.TimeoutError) as err:
+            raise PulseApiError(str(err)) from err
+
+        events: list[tuple[int, str]] = []
+        for line in text.splitlines():
+            if not line:
+                continue
+            parts = line.split("\t", 1)
+            if len(parts) != 2:
+                continue
+            try:
+                events.append((int(parts[0]), parts[1]))
+            except ValueError:
+                continue
+        return events
