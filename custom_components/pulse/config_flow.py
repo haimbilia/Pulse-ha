@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import ipaddress
 
 import aiohttp
 import voluptuous as vol
@@ -36,12 +35,19 @@ class PulseConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def _async_scan_devices(self) -> list[dict]:
         """Scan the local /24 subnet for Pulse devices by probing /status."""
         try:
-            from homeassistant.helpers.network import async_get_source_ip
+            import socket
 
-            try:
-                ha_ip = await async_get_source_ip(self.hass)
-            except Exception:  # noqa: BLE001
-                return []
+            def _get_local_ip() -> str | None:
+                try:
+                    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    s.connect(("8.8.8.8", 80))
+                    ip = s.getsockname()[0]
+                    s.close()
+                    return ip
+                except Exception:  # noqa: BLE001
+                    return None
+
+            ha_ip = await self.hass.async_add_executor_job(_get_local_ip)
 
             if not ha_ip or ":" in ha_ip:
                 return []
