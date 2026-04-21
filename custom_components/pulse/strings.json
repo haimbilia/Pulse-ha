@@ -19,10 +19,6 @@
           "port": "Port",
           "token": "Token (optional)"
         }
-      },
-      "zeroconf_confirm": {
-        "title": "Discovered Pulse",
-        "description": "Set up {name} at {host}:{port}."
       }
     }
   }

@@ -1,16 +1,10 @@
 {
   "domain": "pulse",
   "name": "Pulse",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "documentation": "https://github.com/haimbilia/Pulse-ha",
   "issue_tracker": "https://github.com/haimbilia/Pulse-ha/issues",
   "codeowners": ["@haimbilia"],
   "config_flow": true,
-  "iot_class": "local_polling",
-  "zeroconf": [
-    {
-      "type": "_pulse._tcp.local.",
-      "name": "pulse-*"
-    }
-  ]
+  "iot_class": "local_polling"
 }
