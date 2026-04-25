@@ -42,6 +42,9 @@ class PulseApiClient:
         return data
 
     async def async_get_status(self) -> dict[str, Any]:
+        """Deprecated: integration is now push-only. State arrives via the
+        firmware webhook handler in __init__.py. Kept for back-compat /
+        manual diagnostics; HA does not call this on a schedule anymore."""
         try:
             data = await self._request_json("/status")
         except (ClientError, TimeoutError, ValueError) as err:
@@ -79,7 +82,8 @@ class PulseApiClient:
         return bool(status.get("pcOnline", False))
 
     async def async_get_events(self, after: int = 0) -> list[tuple[int, str]]:
-        """Fetch protocol events newer than `after` as (id, line) tuples."""
+        """Deprecated: PULSE events arrive via the firmware webhook push,
+        not by polling /events. Kept for back-compat / diagnostics only."""
         try:
             async with self._session.get(
                 f"{self._base_url}/events",
