@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
+import aiohttp
 from aiohttp import web
 
 from homeassistant.components import webhook
@@ -66,6 +68,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # Auto-configure the firmware with the webhook URL HA just generated.
+    # Fire-and-forget — if the firmware is unreachable right now, integration
+    # setup still succeeds; the user can fix it and the next HA restart
+    # re-pushes. Manual `ha_url` / `ha_webhook` serial commands remain as
+    # a fallback.
+    hass.async_create_task(_push_webhook_url_to_firmware(hass, entry, webhook_id))
+
     return True
 
 
@@ -79,6 +89,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             except ValueError:
                 # Already unregistered (e.g. HA restart re-registered).
                 pass
+        # Best-effort firmware cleanup so it doesn't keep pushing to a dead
+        # webhook after the integration is removed. Not awaited — unload
+        # should not block on firmware reachability.
+        host = entry.data.get(CONF_HOST)
+        port = entry.data.get(CONF_PORT)
+        if host and port:
+            hass.async_create_task(_clear_firmware_webhook_config(hass, host, port))
         hass.data[DOMAIN].pop(entry.entry_id, None)
     return unloaded
 
@@ -249,3 +266,63 @@ def _fire_pulse_event(hass: HomeAssistant, payload: dict[str, Any]) -> None:
             "type": payload.get("pulse_type", "pairing_mode"),
         },
     )
+
+
+async def _push_webhook_url_to_firmware(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    webhook_id: str,
+) -> None:
+    """Tell the firmware where to push by POSTing the webhook URL.
+
+    Idempotent — runs every entry setup. If HA's URL changes, the next
+    restart re-syncs the firmware. Falls back silently if the firmware
+    is unreachable; user can configure manually via serial commands.
+    """
+    url = webhook.async_generate_url(hass, webhook_id)
+    host = entry.data[CONF_HOST]
+    port = entry.data[CONF_PORT]
+    target = f"http://{host}:{port}/ha_config"
+
+    session = async_get_clientsession(hass)
+    try:
+        async with session.post(
+            target,
+            data=url,
+            headers={"Content-Type": "text/plain"},
+            timeout=aiohttp.ClientTimeout(total=5),
+        ) as resp:
+            if resp.status == 200:
+                _LOGGER.info(
+                    "Pushed HA webhook URL to Pulse firmware at %s", host
+                )
+            else:
+                _LOGGER.warning(
+                    "Pulse firmware rejected webhook URL push: HTTP %s",
+                    resp.status,
+                )
+    except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+        _LOGGER.warning(
+            "Could not push webhook URL to Pulse firmware at %s: %s. "
+            "User can configure manually via 'ha_url' / 'ha_webhook' "
+            "serial commands.",
+            host,
+            err,
+        )
+
+
+async def _clear_firmware_webhook_config(
+    hass: HomeAssistant, host: str, port: int
+) -> None:
+    """Best-effort empty POST to clear the firmware's HA config on unload."""
+    session = async_get_clientsession(hass)
+    try:
+        async with session.post(
+            f"http://{host}:{port}/ha_config",
+            data="",
+            headers={"Content-Type": "text/plain"},
+            timeout=aiohttp.ClientTimeout(total=5),
+        ):
+            pass
+    except (aiohttp.ClientError, asyncio.TimeoutError):
+        pass
