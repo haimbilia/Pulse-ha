@@ -10,3 +10,4 @@ UDP_DISCOVERY_PORT = 4041
 PLATFORMS = ["button", "binary_sensor", "sensor"]
 DATA_CLIENT = "client"
 DATA_COORDINATOR = "coordinator"
+DATA_EVENT_LISTENER = "event_listener"

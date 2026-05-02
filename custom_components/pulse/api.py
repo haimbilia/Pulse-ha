@@ -62,7 +62,7 @@ class PulseApiClient:
         """Fetch a status snapshot over the Pulse TCP line protocol."""
         try:
             lines = await self._exchange(
-                ["status", "wifi_status", "l"],
+                ["status", "wifi_status", "ha_sync_status", "l"],
                 lambda current: any(line == "LIST_END" for line in current),
                 timeout=6.0,
             )
@@ -70,6 +70,26 @@ class PulseApiClient:
             raise PulseApiError("Failed to fetch Pulse status") from err
 
         return _parse_status_snapshot(lines)
+
+    async def async_clear_ha_sync_dirty(self) -> None:
+        """Tell WiFi_NODE that Home Assistant has synced saved controllers."""
+        try:
+            lines = await self._exchange(
+                ["session_take", "ha_sync_clear"],
+                lambda current: any(
+                    line.startswith("HA_SYNC|STATE|")
+                    or line.startswith("OK|ha_sync_clear")
+                    or line.startswith("ERR|")
+                    for line in current
+                ),
+                timeout=6.0,
+            )
+        except (asyncio.TimeoutError, PulseApiError, OSError) as err:
+            raise PulseApiError("Failed to clear Pulse HA sync state") from err
+
+        error = next((line for line in lines if line.startswith("ERR|")), None)
+        if error:
+            raise PulseApiError(error)
 
     async def async_wake_pc(self, target_id: str | None = None) -> None:
         """Trigger a Pulse wake/power pulse over TCP."""
@@ -124,6 +144,8 @@ def _parse_status_snapshot(lines: list[str]) -> dict[str, Any]:
             data["wifiStatus"] = line.removeprefix("WIFI|STATUS|").lower()
         elif line.startswith("WIFI|STATE|"):
             data["wifiEnabled"] = line.endswith("|ENABLED")
+        elif line.startswith("HA_SYNC|STATE|"):
+            _parse_ha_sync_state(line, data)
         elif line.startswith("PULSE_WIFI|HELLO|"):
             _parse_wifi_hello(line, data)
         else:
@@ -163,6 +185,45 @@ def _parse_wifi_hello(line: str, data: dict[str, Any]) -> None:
             data["wifiBuild"] = value
         elif key == "api":
             data["wifiApi"] = value
+
+
+def _parse_ha_sync_state(line: str, data: dict[str, Any]) -> None:
+    for token in line.split("|")[2:]:
+        if "=" not in token:
+            continue
+        key, value = token.split("=", 1)
+        if key == "dirty":
+            data["haSyncDirty"] = value == "1"
+        elif key == "reason":
+            data["haSyncReason"] = value
+
+
+def parse_pulse_event(line: str) -> dict[str, Any] | None:
+    """Parse a BT_NODE PULSE event into Home Assistant event data."""
+    if not line.startswith("PULSE|"):
+        return None
+    parts = line.split("|")
+    if len(parts) < 5:
+        return None
+    source = parts[1]
+    mac = parts[2].lower()
+    if not _MAC_RE.match(mac):
+        return None
+
+    attrs: dict[str, str] = {}
+    for token in parts[4:]:
+        if "=" in token:
+            key, value = token.split("=", 1)
+            attrs[key] = value
+
+    wake_type = "single_press" if attrs.get("sp") == "1" else "wake_mode"
+    return {
+        "mac": mac,
+        "type": wake_type,
+        "source": source,
+        "name": parts[3],
+        "line": line,
+    }
 
 
 def _parse_controller_line(line: str) -> dict[str, Any] | None:

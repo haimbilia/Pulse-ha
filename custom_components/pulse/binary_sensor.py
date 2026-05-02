@@ -5,6 +5,8 @@ import asyncio
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -12,7 +14,8 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DATA_COORDINATOR, DOMAIN
 from .coordinator import PulseDataUpdateCoordinator, PULSE_WAKE_EVENT
 
-WAKE_TYPES = ("single_press", "pairing_mode")
+WAKE_TYPES = ("single_press", "wake_mode")
+LEGACY_WAKE_TYPES = ("pairing_mode",)
 MOMENTARY_PULSE_SECONDS = 2.0
 
 
@@ -30,10 +33,58 @@ async def async_setup_entry(
     def _sync_controllers() -> None:
         data = coordinator.data or {}
         controllers = data.get("controllers", [])
+        active_macs = {
+            c.get("mac", "").lower()
+            for c in controllers
+            if c.get("mac", "")
+        }
+        stale_macs = known_macs - active_macs
+        if stale_macs:
+            ent_reg = er.async_get(hass)
+            dev_reg = dr.async_get(hass)
+            for mac in stale_macs:
+                mac_slug = mac.replace(":", "")
+                for wake_type in WAKE_TYPES + LEGACY_WAKE_TYPES:
+                    entity_id = ent_reg.async_get_entity_id(
+                        "binary_sensor",
+                        DOMAIN,
+                        f"{entry.entry_id}_{mac_slug}_{wake_type}",
+                    )
+                    if entity_id:
+                        ent_reg.async_remove(entity_id)
+                device = dev_reg.async_get_device(
+                    identifiers={(DOMAIN, f"{entry.entry_id}_controller_{mac_slug}")}
+                )
+                if device is not None:
+                    dev_reg.async_remove_device(device.id)
+                known_macs.remove(mac)
+
+        dev_reg = dr.async_get(hass)
         new_entities: list[PulseControllerWakeSensor] = []
         for c in controllers:
             mac = c.get("mac", "").lower()
-            if not mac or mac in known_macs:
+            if not mac:
+                continue
+            mac_slug = mac.replace(":", "")
+            ent_reg = er.async_get(hass)
+            for wake_type in LEGACY_WAKE_TYPES:
+                entity_id = ent_reg.async_get_entity_id(
+                    "binary_sensor",
+                    DOMAIN,
+                    f"{entry.entry_id}_{mac_slug}_{wake_type}",
+                )
+                if entity_id:
+                    ent_reg.async_remove(entity_id)
+            if mac in known_macs:
+                device = dev_reg.async_get_device(
+                    identifiers={(DOMAIN, f"{entry.entry_id}_controller_{mac_slug}")}
+                )
+                if device is not None:
+                    dev_reg.async_update_device(
+                        device.id,
+                        name=c.get("name", mac),
+                        model=f"Controller ({c.get('radio', 'unknown').upper()})",
+                    )
                 continue
             known_macs.add(mac)
             for wake_type in WAKE_TYPES:
@@ -95,7 +146,7 @@ class PulseControllerWakeSensor(BinarySensorEntity):
         mac_slug = mac.lower().replace(":", "")
         self._attr_unique_id = f"{entry.entry_id}_{mac_slug}_{wake_type}"
 
-        type_label = "Single-press wake" if wake_type == "single_press" else "Pairing-mode wake"
+        type_label = "Single press" if wake_type == "single_press" else "Wake mode"
         self._attr_name = type_label
 
         self._attr_device_info = DeviceInfo(
