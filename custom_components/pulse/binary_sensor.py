@@ -14,8 +14,8 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DATA_COORDINATOR, DOMAIN
 from .coordinator import PulseDataUpdateCoordinator, PULSE_WAKE_EVENT
 
-WAKE_TYPES = ("single_press", "wake_mode")
-LEGACY_WAKE_TYPES = ("pairing_mode",)
+WAKE_TYPES = ("single_press", "pairing_mode")
+LEGACY_WAKE_TYPES = ("wake_mode",)
 MOMENTARY_PULSE_SECONDS = 2.0
 
 
@@ -26,6 +26,7 @@ async def async_setup_entry(
 ) -> None:
     coordinator: PulseDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
     known_macs: set[str] = set()
+    known_entities: set[tuple[str, str]] = set()
 
     async_add_entities([PulseOnlineBinarySensor(entry, coordinator)])
 
@@ -33,6 +34,8 @@ async def async_setup_entry(
     def _sync_controllers() -> None:
         data = coordinator.data or {}
         controllers = data.get("controllers", [])
+        ent_reg = er.async_get(hass)
+        dev_reg = dr.async_get(hass)
         active_macs = {
             c.get("mac", "").lower()
             for c in controllers
@@ -52,6 +55,7 @@ async def async_setup_entry(
                     )
                     if entity_id:
                         ent_reg.async_remove(entity_id)
+                    known_entities.discard((mac, wake_type))
                 device = dev_reg.async_get_device(
                     identifiers={(DOMAIN, f"{entry.entry_id}_controller_{mac_slug}")}
                 )
@@ -59,14 +63,12 @@ async def async_setup_entry(
                     dev_reg.async_remove_device(device.id)
                 known_macs.remove(mac)
 
-        dev_reg = dr.async_get(hass)
         new_entities: list[PulseControllerWakeSensor] = []
         for c in controllers:
             mac = c.get("mac", "").lower()
             if not mac:
                 continue
             mac_slug = mac.replace(":", "")
-            ent_reg = er.async_get(hass)
             for wake_type in LEGACY_WAKE_TYPES:
                 entity_id = ent_reg.async_get_entity_id(
                     "binary_sensor",
@@ -75,6 +77,24 @@ async def async_setup_entry(
                 )
                 if entity_id:
                     ent_reg.async_remove(entity_id)
+                known_entities.discard((mac, wake_type))
+
+            desired_types = ["pairing_mode"]
+            if c.get("singlePressValidated"):
+                desired_types.append("single_press")
+
+            for wake_type in WAKE_TYPES:
+                if wake_type in desired_types:
+                    continue
+                entity_id = ent_reg.async_get_entity_id(
+                    "binary_sensor",
+                    DOMAIN,
+                    f"{entry.entry_id}_{mac_slug}_{wake_type}",
+                )
+                if entity_id:
+                    ent_reg.async_remove(entity_id)
+                known_entities.discard((mac, wake_type))
+
             if mac in known_macs:
                 device = dev_reg.async_get_device(
                     identifiers={(DOMAIN, f"{entry.entry_id}_controller_{mac_slug}")}
@@ -85,9 +105,13 @@ async def async_setup_entry(
                         name=c.get("name", mac),
                         model=f"Controller ({c.get('radio', 'unknown').upper()})",
                     )
-                continue
-            known_macs.add(mac)
-            for wake_type in WAKE_TYPES:
+            else:
+                known_macs.add(mac)
+
+            for wake_type in desired_types:
+                if (mac, wake_type) in known_entities:
+                    continue
+                known_entities.add((mac, wake_type))
                 new_entities.append(
                     PulseControllerWakeSensor(
                         coordinator=coordinator,
@@ -146,7 +170,7 @@ class PulseControllerWakeSensor(BinarySensorEntity):
         mac_slug = mac.lower().replace(":", "")
         self._attr_unique_id = f"{entry.entry_id}_{mac_slug}_{wake_type}"
 
-        type_label = "Single press" if wake_type == "single_press" else "Wake mode"
+        type_label = "Single press" if wake_type == "single_press" else "Pairing mode"
         self._attr_name = type_label
 
         self._attr_device_info = DeviceInfo(

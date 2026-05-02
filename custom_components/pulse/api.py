@@ -216,7 +216,7 @@ def parse_pulse_event(line: str) -> dict[str, Any] | None:
             key, value = token.split("=", 1)
             attrs[key] = value
 
-    wake_type = "single_press" if attrs.get("sp") == "1" else "wake_mode"
+    wake_type = "single_press" if attrs.get("sp") == "1" else "pairing_mode"
     return {
         "mac": mac,
         "type": wake_type,
