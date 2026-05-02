@@ -116,8 +116,29 @@ class PulseApiClient:
         return bool(status.get("pcOnline", False))
 
     async def async_get_events(self, after: int = 0) -> list[tuple[int, str]]:
-        """Event polling is no longer part of the Pulse control protocol."""
-        return []
+        """Drain queued Pulse events from WiFi_NODE."""
+        try:
+            lines = await self._exchange(
+                [f"ha_events {max(after, 0)}"],
+                lambda current: any(line.startswith("HA_EVENT_END|") for line in current),
+                timeout=6.0,
+            )
+        except (asyncio.TimeoutError, PulseApiError, OSError) as err:
+            raise PulseApiError("Failed to fetch Pulse events") from err
+
+        events: list[tuple[int, str]] = []
+        for line in lines:
+            if not line.startswith("HA_EVENT|"):
+                continue
+            parts = line.split("|", 2)
+            if len(parts) != 3:
+                continue
+            try:
+                seq = int(parts[1], 10)
+            except ValueError:
+                continue
+            events.append((seq, parts[2]))
+        return events
 
 
 def _parse_status_snapshot(lines: list[str]) -> dict[str, Any]:

@@ -27,6 +27,7 @@ class PulseTcpEventListener:
         self._coordinator = coordinator
         self._task: asyncio.Task | None = None
         self._sync_task: asyncio.Task | None = None
+        self._last_event_seq = 0
         self._stopping = False
 
     def start(self) -> None:
@@ -59,6 +60,7 @@ class PulseTcpEventListener:
                 continue
 
             backoff = 2.0
+            poll_task = asyncio.create_task(self._poll_events(writer))
             try:
                 while not self._stopping:
                     raw = await reader.readline()
@@ -70,20 +72,45 @@ class PulseTcpEventListener:
             except (ConnectionError, OSError) as err:
                 _LOGGER.debug("Pulse TCP event listener disconnected: %s", err)
             finally:
+                poll_task.cancel()
+                try:
+                    await poll_task
+                except asyncio.CancelledError:
+                    pass
+                except (ConnectionError, OSError):
+                    pass
                 writer.close()
                 try:
                     await writer.wait_closed()
                 except (ConnectionError, OSError):
                     pass
                 if not self._stopping:
-                    await asyncio.sleep(15.0)
+                    await asyncio.sleep(1.0)
+
+    async def _poll_events(self, writer: asyncio.StreamWriter) -> None:
+        while not self._stopping:
+            writer.write(f"ha_events {self._last_event_seq}\n".encode())
+            await writer.drain()
+            await asyncio.sleep(2.0)
 
     def _handle_line(self, line: str) -> None:
         if line.startswith("HA_SYNC|DIRTY"):
             self._schedule_controller_sync()
             return
 
-        event_data = parse_pulse_event(line)
+        if not line.startswith("HA_EVENT|"):
+            return
+        parts = line.split("|", 2)
+        if len(parts) != 3:
+            return
+        try:
+            seq = int(parts[1], 10)
+        except ValueError:
+            return
+        if seq <= self._last_event_seq:
+            return
+        self._last_event_seq = seq
+        event_data = parse_pulse_event(parts[2])
         if event_data is not None:
             self._hass.bus.async_fire(PULSE_WAKE_EVENT, event_data)
 
