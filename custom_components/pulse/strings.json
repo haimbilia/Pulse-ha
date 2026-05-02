@@ -13,7 +13,7 @@
       },
       "manual": {
         "title": "Connect to Pulse",
-        "description": "Enter the Pulse device host or IP address and the web server port.",
+        "description": "Enter the Pulse device host or IP address and the TCP control port.",
         "data": {
           "host": "Host",
           "port": "Port",

@@ -1,6 +1,6 @@
 # Pulse Home Assistant Integration
 
-Pulse is a local Home Assistant integration for the Pulse controller. It lets Home Assistant talk directly to the Pulse web API over your local network so you can:
+Pulse is a local Home Assistant integration for the Pulse controller. It lets Home Assistant talk directly to the Pulse TCP control protocol over your local network so you can:
 
 - trigger a wake / power pulse from Home Assistant
 - monitor whether the PC is currently online
@@ -10,11 +10,11 @@ This integration is designed for the Pulse firmware and Windows app in the main 
 
 ## Features
 
-- Local HTTP communication with the Pulse device
+- Local TCP communication with the Pulse device
 - `Wake PC` button entity
 - `PC Online` binary sensor
 - Config flow support from the Home Assistant UI
-- Optional zeroconf discovery when the firmware advertises `_pulse._tcp.local`
+- Optional UDP discovery when the firmware replies to `PULSE_DISCOVER?` on port `4041`
 
 ## Entities
 
@@ -27,9 +27,9 @@ After setup, Home Assistant creates:
 
 ## Requirements
 
-- A Pulse ESP32 running firmware with the web API enabled
+- A Pulse ESP32 running firmware with the TCP control server enabled
 - Pulse connected to your local Wi-Fi network
-- Home Assistant able to reach the Pulse IP address over HTTP
+- Home Assistant able to reach the Pulse IP address on TCP port `4040`
 
 ## Installation
 
@@ -58,15 +58,15 @@ config/custom_components/pulse/
 1. In Home Assistant, go to `Settings -> Devices & services`.
 2. Click `Add Integration`.
 3. Search for `Pulse`.
-4. Enter the Pulse device IP/host and port.
+4. Enter the Pulse device IP/host and TCP port.
 5. Leave token empty unless your Pulse API is later secured with one.
 6. Finish setup.
 
 ## Discovery
 
-This integration includes zeroconf discovery support, but discovery only works if the Pulse firmware is advertising the `_pulse._tcp.local` service on your network.
+This integration includes UDP discovery support. It broadcasts `PULSE_DISCOVER?` on port `4041` and uses the firmware's `PULSE_HERE|...|4040` response.
 
-At the moment, Pulse firmware may still require manual setup if mDNS is disabled in the firmware build.
+If discovery is unavailable, add the integration manually by IP and TCP port `4040`.
 
 ## How To Use
 
@@ -103,42 +103,38 @@ state: "off"
 ### Home Assistant cannot connect
 
 - Confirm the Pulse IP address is correct
-- Confirm port `80` is reachable from Home Assistant
-- Open `http://PULSE_IP/status` in a browser
+- Confirm TCP port `4040` is reachable from Home Assistant
+- Confirm the Pulse Windows app is not holding the only TCP session while Home Assistant is setting up
 
 ### Wake requests fail
 
-- Open `http://PULSE_IP/wake` in a browser on the same network
 - Verify the Pulse device is still connected to Wi-Fi
-- Check that the firmware web server is running and not stuck
+- Check that the firmware TCP server is running and not stuck
 - Update to the latest Pulse firmware and Home Assistant integration files
 
 ### Discovery does not appear
 
 - Confirm Pulse and Home Assistant are on the same local subnet
-- Confirm mDNS/zeroconf is enabled in the Pulse firmware
+- Confirm UDP broadcast traffic is allowed on your network
 - If discovery is unavailable, add the integration manually by IP
 
-## API Endpoints Used
+## TCP Protocol Used
 
-The current integration uses:
+The current integration connects to TCP port `4040` and sends line-based Pulse commands:
 
-- `GET /status`
-- `POST /wake`
-- `GET /wake` as a retry fallback
+- `status`
+- `wifi_status`
+- `l`
+- `session_take`
+- `pulse`
 
-Expected `GET /status` response includes:
+Expected status/list responses are the same text lines used by the Pulse Windows app, for example:
 
-```json
-{
-  "wifiEnabled": true,
-  "wifiConnected": true,
-  "ssid": "YourWiFi",
-  "ip": "192.168.1.50",
-  "pcOnline": false,
-  "pcStatusPin": 27,
-  "pcStatusRaw": 1
-}
+```text
+STATUS|role=wifi_node|ver=1.4.0|wifi=connected|ip=192.168.1.50|bridge=idle|bt=...|owner=none
+WIFI|STATUS|CONNECTED|YourWiFi|192.168.1.50|-43
+aa:bb:cc:dd:ee:ff | Wireless Controller | 5s | classic | 1 | 1 | 1 | cod=0x000000
+LIST_END
 ```
 
 ## Project Status

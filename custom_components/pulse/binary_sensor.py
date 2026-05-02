@@ -68,6 +68,10 @@ class PulseOnlineBinarySensor(CoordinatorEntity, BinarySensorEntity):
     def is_on(self) -> bool:
         return bool(self.coordinator.data.get("pcOnline", False))
 
+    @property
+    def available(self) -> bool:
+        return self.coordinator.last_update_success and self.coordinator.data.get("pcOnline") is not None
+
 
 class PulseControllerWakeSensor(BinarySensorEntity):
     _attr_should_poll = False

@@ -1,87 +1,41 @@
 from __future__ import annotations
 
-import asyncio
-import ipaddress
+import socket
+import time
 
-import aiohttp
 import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResult
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import PulseApiClient, PulseApiError
-from .const import CONF_HOST, CONF_PORT, CONF_TOKEN, DEFAULT_PORT, DOMAIN
+from .const import CONF_HOST, CONF_PORT, CONF_TOKEN, DEFAULT_PORT, DOMAIN, UDP_DISCOVERY_PORT
 
 
 class PulseConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    VERSION = 1
+    VERSION = 2
 
     def __init__(self) -> None:
         self._scan_results: list[dict] = []
 
     async def _async_validate_input(self, data: dict) -> dict:
         client = PulseApiClient(
-            session=async_get_clientsession(self.hass),
             host=data[CONF_HOST],
             port=data[CONF_PORT],
             token=data.get(CONF_TOKEN),
         )
-        await client.async_get_status()
+        status = await client.async_get_status()
+        title = f"Pulse ({data[CONF_HOST]})"
+        if status.get("wifiBuild"):
+            title = f"Pulse ({data[CONF_HOST]})"
         return {
-            "title": f"Pulse ({data[CONF_HOST]})",
+            "title": title,
             "unique_id": f"{data[CONF_HOST]}:{data[CONF_PORT]}",
         }
 
     async def _async_scan_devices(self) -> list[dict]:
-        """Scan the local /24 subnet for Pulse devices by probing /status."""
-        try:
-            import socket
-
-            def _get_local_ip() -> str | None:
-                try:
-                    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                    s.connect(("8.8.8.8", 80))
-                    ip = s.getsockname()[0]
-                    s.close()
-                    return ip
-                except Exception:  # noqa: BLE001
-                    return None
-
-            ha_ip = await self.hass.async_add_executor_job(_get_local_ip)
-
-            if not ha_ip or ":" in ha_ip:
-                return []
-
-            try:
-                network = ipaddress.IPv4Network(f"{ha_ip}/24", strict=False)
-            except ValueError:
-                return []
-
-            session = async_get_clientsession(self.hass)
-
-            async def probe(ip: str) -> dict | None:
-                try:
-                    async with session.get(
-                        f"http://{ip}:{DEFAULT_PORT}/status",
-                        timeout=aiohttp.ClientTimeout(total=1.5),
-                    ) as response:
-                        if response.status != 200:
-                            return None
-                        data = await response.json(content_type=None)
-                        if not isinstance(data, dict):
-                            return None
-                        if data.get("deviceName") != "pulse":
-                            return None
-                        return {"name": f"Pulse ({ip})", "host": ip, "port": DEFAULT_PORT}
-                except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
-                    return None
-
-            tasks = [probe(str(ip)) for ip in network.hosts()]
-            results_raw = await asyncio.gather(*tasks, return_exceptions=True)
-            return [r for r in results_raw if isinstance(r, dict)]
-        except Exception:  # noqa: BLE001
-            return []
+        """Discover Pulse devices through the UDP discovery beacon."""
+        return await self.hass.async_add_executor_job(_scan_udp_devices)
 
     async def async_step_user(self, user_input: dict | None = None) -> FlowResult:
         if user_input is None:
@@ -149,3 +103,48 @@ class PulseConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Optional(CONF_TOKEN, default=user_input.get(CONF_TOKEN, "")): str,
             }
         )
+
+
+def _scan_udp_devices() -> list[dict]:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    sock.settimeout(0.4)
+
+    results: dict[str, dict] = {}
+    try:
+        payload = b"PULSE_DISCOVER?"
+        sock.sendto(payload, ("255.255.255.255", UDP_DISCOVERY_PORT))
+
+        deadline = time.monotonic() + 1.5
+        while True:
+            try:
+                data, addr = sock.recvfrom(512)
+            except socket.timeout:
+                if time.monotonic() >= deadline:
+                    break
+                continue
+
+            parsed = _parse_discovery_response(data.decode(errors="replace").strip(), addr[0])
+            if parsed:
+                results[f"{parsed['host']}:{parsed['port']}"] = parsed
+    finally:
+        sock.close()
+
+    return list(results.values())
+
+
+def _parse_discovery_response(line: str, source_ip: str) -> dict | None:
+    parts = line.split("|")
+    if len(parts) < 7 or parts[0] != "PULSE_HERE":
+        return None
+    try:
+        port = int(parts[6])
+    except ValueError:
+        return None
+    host = parts[5] or source_ip
+    name = parts[1] or "pulse"
+    return {
+        "name": f"{name} ({host})",
+        "host": host,
+        "port": port,
+    }

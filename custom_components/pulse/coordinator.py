@@ -1,20 +1,15 @@
-"""Coordinator — pure data holder, no polling.
-
-Updated by the webhook handler in __init__.py via async_set_updated_data
-when the firmware pushes a "state" payload. The firmware also pushes
-"pulse" events directly to the bus; the coordinator only carries the
-periodic state snapshot.
-"""
+"""Coordinator for the Pulse TCP integration."""
 
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 from typing import Any
 
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import PulseApiClient
+from .api import PulseApiClient, PulseApiError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -27,16 +22,13 @@ class PulseDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             hass,
             logger=_LOGGER,
             name="pulse",
-            # No update_interval — this coordinator does not poll. Data
-            # arrives via the firmware webhook push handler.
+            update_interval=timedelta(seconds=30),
         )
         self.client = client
-        # Seed with empty state so platforms can read coordinator.data
-        # safely before the first push arrives.
         self.data = {"controllers": [], "pcOnline": None}
 
     async def _async_update_data(self) -> dict[str, Any]:
-        # Coordinator is push-driven; never refresh on its own. If HA
-        # asks for an update (e.g. async_config_entry_first_refresh),
-        # just return whatever we have.
-        return self.data
+        try:
+            return await self.client.async_get_status()
+        except PulseApiError as err:
+            raise UpdateFailed(str(err)) from err
