@@ -15,7 +15,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     listener = hass.data[DOMAIN][entry.entry_id][DATA_EVENT_LISTENER]
-    async_add_entities([PulseTcpEndpointSensor(entry), PulseEventDiagnosticsSensor(entry, listener)])
+    async_add_entities([PulseTcpEndpointSensor(entry, listener), PulseEventDiagnosticsSensor(entry, listener)])
 
 
 class PulseTcpEndpointSensor(SensorEntity):
@@ -25,9 +25,10 @@ class PulseTcpEndpointSensor(SensorEntity):
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_should_poll = False
 
-    def __init__(self, entry: ConfigEntry) -> None:
+    def __init__(self, entry: ConfigEntry, listener) -> None:
         host = entry.data[CONF_HOST]
         port = entry.data[CONF_PORT]
+        self._listener = listener
         self._attr_unique_id = f"{entry.entry_id}_tcp_endpoint"
         self._attr_native_value = f"{host}:{port}"
         self._attr_device_info = DeviceInfo(
@@ -36,6 +37,21 @@ class PulseTcpEndpointSensor(SensorEntity):
             manufacturer="Pulse",
             model="Gateway",
         )
+        self._refresh_from_listener()
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(self._listener.async_add_listener(self._handle_update))
+
+    def _handle_update(self) -> None:
+        self._refresh_from_listener()
+        self.async_write_ha_state()
+
+    def _refresh_from_listener(self) -> None:
+        diagnostics = self._listener.diagnostics
+        self._attr_extra_state_attributes = {
+            f"event_{key}": value
+            for key, value in diagnostics.items()
+        }
 
 
 class PulseEventDiagnosticsSensor(SensorEntity):
