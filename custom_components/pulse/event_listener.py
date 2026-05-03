@@ -197,8 +197,16 @@ class PulseTcpEventListener:
 
         if line.startswith("PULSE|"):
             self._last_event_payload = line
-            self._ignored_line_count += 1
-            self._last_ignored_reason = "raw_pulse_waiting_for_ha_event_backlog"
+            event_data = parse_pulse_event(line)
+            if event_data is not None:
+                self._parsed_event_count += 1
+                self._last_parsed_event = event_data
+                self._hass.bus.async_fire(PULSE_WAKE_EVENT, event_data)
+                self._fired_event_count += 1
+                self._last_ignored_reason = None
+            else:
+                self._ignored_line_count += 1
+                self._last_ignored_reason = "pulse_parse_failed"
             self._notify()
             return
 
