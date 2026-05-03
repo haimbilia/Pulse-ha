@@ -52,8 +52,13 @@ class PulseTcpEventListener:
         self._last_ha_event_line: str | None = None
         self._last_event_payload: str | None = None
         self._last_parsed_event: dict[str, Any] | None = None
+        self._last_fired_event: dict[str, Any] | None = None
+        self._last_fired_at: datetime | None = None
         self._last_ignored_reason: str | None = None
         self._last_error: str | None = None
+        self._last_sync_started_at: datetime | None = None
+        self._last_sync_finished_at: datetime | None = None
+        self._last_sync_result: str | None = None
 
     def start(self) -> None:
         self._state = "starting"
@@ -108,8 +113,14 @@ class PulseTcpEventListener:
             "last_ha_event_line": self._last_ha_event_line,
             "last_event_payload": self._last_event_payload,
             "last_parsed_event": self._last_parsed_event,
+            "last_fired_event": self._last_fired_event,
+            "last_fired_at": self._last_fired_at.isoformat() if self._last_fired_at else None,
             "last_ignored_reason": self._last_ignored_reason,
             "last_error": self._last_error,
+            "sync_in_progress": self._sync_task is not None and not self._sync_task.done(),
+            "last_sync_started_at": self._last_sync_started_at.isoformat() if self._last_sync_started_at else None,
+            "last_sync_finished_at": self._last_sync_finished_at.isoformat() if self._last_sync_finished_at else None,
+            "last_sync_result": self._last_sync_result,
         }
 
     def _notify(self) -> None:
@@ -203,6 +214,8 @@ class PulseTcpEventListener:
                 self._last_parsed_event = event_data
                 self._hass.bus.async_fire(PULSE_WAKE_EVENT, event_data)
                 self._fired_event_count += 1
+                self._last_fired_event = event_data
+                self._last_fired_at = dt_util.utcnow()
                 self._last_ignored_reason = None
             else:
                 self._ignored_line_count += 1
@@ -243,6 +256,8 @@ class PulseTcpEventListener:
             self._last_parsed_event = event_data
             self._hass.bus.async_fire(PULSE_WAKE_EVENT, event_data)
             self._fired_event_count += 1
+            self._last_fired_event = event_data
+            self._last_fired_at = dt_util.utcnow()
         else:
             self._ignored_line_count += 1
             self._last_ignored_reason = "pulse_parse_failed"
@@ -256,10 +271,22 @@ class PulseTcpEventListener:
         )
 
     async def _sync_controllers(self) -> None:
+        self._last_sync_started_at = dt_util.utcnow()
+        self._last_sync_result = "running"
+        self._notify()
         await self._coordinator.async_request_refresh()
         if not self._coordinator.last_update_success:
+            self._last_sync_finished_at = dt_util.utcnow()
+            self._last_sync_result = "refresh_failed"
+            self._notify()
             return
         try:
             await self._client.async_clear_ha_sync_dirty()
         except PulseApiError as err:
+            self._last_sync_result = f"clear_failed: {err}"
             _LOGGER.debug("Failed to clear Pulse HA sync dirty state: %s", err)
+        else:
+            self._last_sync_result = "ok"
+        finally:
+            self._last_sync_finished_at = dt_util.utcnow()
+            self._notify()

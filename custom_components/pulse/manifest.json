@@ -1,7 +1,7 @@
 {
   "domain": "pulse",
   "name": "Pulse",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "documentation": "https://github.com/haimbilia/Pulse-ha",
   "issue_tracker": "https://github.com/haimbilia/Pulse-ha/issues",
   "codeowners": ["@haimbilia"],
